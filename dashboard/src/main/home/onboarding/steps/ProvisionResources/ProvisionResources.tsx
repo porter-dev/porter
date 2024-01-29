@@ -300,6 +300,7 @@ const ProvisionResources: React.FC<{}> = () => {
       <Subtitle>
         Step 3 of 3 - Provision resources
         <DocsHelper
+          placement="bottom-end"
           tooltipText="Porter provisions and manages the underlying infrastructure in your own cloud. It is not necessary to know about the provisioned resources to use Porter."
           link={
             "https://docs.porter.run/getting-started/provisioning-infrastructure#faq"
