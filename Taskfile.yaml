@@ -25,12 +25,6 @@ tasks:
     desc: Create prerelease of CLI at the provided semantic version. Call `task cli-prerelease -- v1.2.3` where v1.2.3 is the desired tag for releasing
     cmds:
     - task: semantic-check
-    - cmd: git fetch origin --tags 
-      silent: true
-    - cmd: git checkout master
-      silent: true
-    - cmd: git pull origin master
-      silent: true
     - cmd: git tag {{.CLI_ARGS}}
       silent: true
       ignore_error: false
