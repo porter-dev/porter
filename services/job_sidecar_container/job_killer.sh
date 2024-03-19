@@ -2,6 +2,7 @@
 
 # Usage: job_killer.sh [-c]? [grace_period_seconds] [process_pattern] [sidecar]?
 #
+#
 # This script waits for a termination signal and gracefully terminates another process before exiting. 
 # 
 # Attempts to gracefully kill a process by sending SIGTERM to the first process that matches 
