@@ -176,28 +176,29 @@ func Apply(ctx context.Context, inp ApplyInput) error {
 		var buildLogs string
 
 		defer func() {
+			var status buildStatus
 			if buildError != nil && !errors.Is(buildError, context.Canceled) {
-				reportBuildFailureInput := reportBuildFailureInput{
+				status = buildStatus_failed
+			} else if !buildFinished {
+				status = buildStatus_canceled
+			}
+
+			if status != "" {
+				_ = reportUnsuccessfulBuild(ctx, reportUnsuccessfulBuildInput{
 					client:             client,
 					appName:            appName,
+					buildStatus:        status,
 					cliConf:            cliConf,
 					deploymentTargetID: deploymentTargetID,
 					appRevisionID:      updateResp.AppRevisionId,
 					eventID:            eventID,
-					commitSHA:          commitSHA,
-					prNumber:           prNumber,
 					buildError:         buildError,
 					buildLogs:          buildLogs,
-				}
-				_ = reportBuildFailure(ctx, reportBuildFailureInput)
-				return
+					commitSHA:          commitSHA,
+					prNumber:           prNumber,
+				})
 			}
-			if !buildFinished {
-				buildMetadata := make(map[string]interface{})
-				buildMetadata["end_time"] = time.Now().UTC()
-				_ = updateExistingEvent(ctx, client, appName, cliConf.Project, cliConf.Cluster, deploymentTargetID, types.PorterAppEventType_Build, eventID, types.PorterAppEventStatus_Canceled, buildMetadata)
-				return
-			}
+			return
 		}()
 
 		if commitSHA == "" {
@@ -389,9 +390,10 @@ func deploymentTargetFromConfig(ctx context.Context, client api.Client, projectI
 	return deploymentTargetID, nil
 }
 
-type reportBuildFailureInput struct {
+type reportUnsuccessfulBuildInput struct {
 	client             api.Client
 	appName            string
+	buildStatus        buildStatus
 	cliConf            config.CLIConfig
 	deploymentTargetID string
 	appRevisionID      string
@@ -402,8 +404,29 @@ type reportBuildFailureInput struct {
 	prNumber           int
 }
 
-func reportBuildFailure(ctx context.Context, inp reportBuildFailureInput) error {
-	_, err := inp.client.UpdateRevisionStatus(ctx, inp.cliConf.Project, inp.cliConf.Cluster, inp.appName, inp.appRevisionID, models.AppRevisionStatus_BuildFailed)
+type buildStatus string
+
+var (
+	buildStatus_failed   buildStatus = "failed"
+	buildStatus_canceled buildStatus = "canceled"
+)
+
+func reportUnsuccessfulBuild(ctx context.Context, inp reportUnsuccessfulBuildInput) error {
+	var appRevisionStatus models.AppRevisionStatus
+	var porterAppEventStatus types.PorterAppEventStatus
+
+	switch inp.buildStatus {
+	case buildStatus_failed:
+		appRevisionStatus = models.AppRevisionStatus_BuildFailed
+		porterAppEventStatus = types.PorterAppEventStatus_Failed
+	case buildStatus_canceled:
+		appRevisionStatus = models.AppRevisionStatus_BuildCanceled
+		porterAppEventStatus = types.PorterAppEventStatus_Canceled
+	default:
+		return errors.New("unknown build status")
+	}
+
+	_, err := inp.client.UpdateRevisionStatus(ctx, inp.cliConf.Project, inp.cliConf.Cluster, inp.appName, inp.appRevisionID, appRevisionStatus)
 	if err != nil {
 		return err
 	}
@@ -413,14 +436,21 @@ func reportBuildFailure(ctx context.Context, inp reportBuildFailureInput) error 
 
 	// the below is a temporary solution until we can report build errors via telemetry from the CLI
 	errorStringMap := make(map[string]string)
-	errorStringMap["build-error"] = fmt.Sprintf("%+v", inp.buildError)
-	b64BuildLogs := base64.StdEncoding.EncodeToString([]byte(inp.buildLogs))
-	// the key name below must be kept the same so that reportBuildStatus in the CreateOrUpdatePorterAppEvent handler reports logs correctly
-	errorStringMap["b64-build-logs"] = b64BuildLogs
 
-	buildMetadata["errors"] = errorStringMap
+	if inp.buildError != nil {
+		errorStringMap["build-error"] = fmt.Sprintf("%+v", inp.buildError)
+	}
+	if inp.buildLogs != "" {
+		b64BuildLogs := base64.StdEncoding.EncodeToString([]byte(inp.buildLogs))
+		// the key name below must be kept the same so that reportBuildStatus in the CreateOrUpdatePorterAppEvent handler reports logs correctly
+		errorStringMap["b64-build-logs"] = b64BuildLogs
+	}
 
-	err = updateExistingEvent(ctx, inp.client, inp.appName, inp.cliConf.Project, inp.cliConf.Cluster, inp.deploymentTargetID, types.PorterAppEventType_Build, inp.eventID, types.PorterAppEventStatus_Failed, buildMetadata)
+	if len(errorStringMap) != 0 {
+		buildMetadata["errors"] = errorStringMap
+	}
+
+	err = updateExistingEvent(ctx, inp.client, inp.appName, inp.cliConf.Project, inp.cliConf.Cluster, inp.deploymentTargetID, types.PorterAppEventType_Build, inp.eventID, porterAppEventStatus, buildMetadata)
 	if err != nil {
 		return err
 	}
