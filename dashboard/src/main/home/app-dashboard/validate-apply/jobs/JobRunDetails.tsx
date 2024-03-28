@@ -1,10 +1,14 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import axios from "axios";
 import dayjs from "dayjs";
-import { Link } from "react-router-dom";
+import { Link, useHistory } from "react-router-dom";
 import styled from "styled-components";
 import { match } from "ts-pattern";
 
+import Button from "components/porter/Button";
 import Container from "components/porter/Container";
+import Error from "components/porter/Error";
 import Icon from "components/porter/Icon";
 import Spacer from "components/porter/Spacer";
 import Text from "components/porter/Text";
@@ -12,7 +16,9 @@ import { useLatestRevision } from "main/home/app-dashboard/app-view/LatestRevisi
 import Logs from "main/home/app-dashboard/validate-apply/logs/Logs";
 import { type JobRun } from "lib/hooks/useJobs";
 
+import api from "shared/api";
 import { readableDate } from "shared/string_utils";
+import cancel from "assets/cancel.svg";
 import loading from "assets/loading.gif";
 
 import { AppearingView } from "../../app-view/tabs/activity-feed/events/focus-views/EventFocusView";
@@ -24,8 +30,12 @@ type Props = {
 };
 
 const JobRunDetails: React.FC<Props> = ({ jobRun }) => {
+  const queryClient = useQueryClient();
   const { projectId, clusterId, latestProto, deploymentTarget, porterApp } =
     useLatestRevision();
+  const history = useHistory();
+  const [jobRunCancelling, setJobRunCancelling] = useState<boolean>(false);
+  const [jobRunCancelError, setJobRunCancelError] = useState<string>("");
 
   const appName = latestProto.name;
 
@@ -41,6 +51,11 @@ const JobRunDetails: React.FC<Props> = ({ jobRun }) => {
           Job run failed
         </Text>
       ))
+      .with({ status: "CANCELED" }, () => (
+        <Text color={getStatusColor("CANCELED")} size={16}>
+          Job run canceled
+        </Text>
+      ))
       .otherwise(() => (
         <Container row>
           <Icon height="16px" src={loading} />
@@ -51,6 +66,45 @@ const JobRunDetails: React.FC<Props> = ({ jobRun }) => {
         </Container>
       ));
   };
+
+  const cancelRun = useCallback(async () => {
+    try {
+      setJobRunCancelling(true);
+      setJobRunCancelError("");
+
+      await api.cancelJob(
+        "<token>",
+        {
+          deployment_target_id: deploymentTarget.id,
+        },
+        {
+          project_id: projectId,
+          cluster_id: clusterId,
+          porter_app_name: appName,
+          job_run_name: jobRun.name,
+        }
+      );
+
+      await queryClient.invalidateQueries([
+        "jobRuns",
+        appName,
+        deploymentTarget.id,
+        jobRun.name,
+      ]);
+
+      history.push(
+        `/apps/${appName}/job-history?service=${jobRun.service_name}`
+      );
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setJobRunCancelError(err.message);
+      } else {
+        setJobRunCancelError("An error occurred while canceling the job run.");
+      }
+    } finally {
+      setJobRunCancelling(false);
+    }
+  }, [jobRun.name, deploymentTarget.id, projectId, clusterId, appName]);
 
   const renderDurationText = (): JSX.Element => {
     return match(jobRun)
@@ -73,18 +127,42 @@ const JobRunDetails: React.FC<Props> = ({ jobRun }) => {
 
   return (
     <>
-      <Link
-        to={
-          deploymentTarget.is_preview
-            ? `/preview-environments/apps/${latestProto.name}/job-history?service=${jobRun.service_name}&target=${deploymentTarget.id}`
-            : `/apps/${latestProto.name}/job-history?service=${jobRun.service_name}`
-        }
-      >
-        <BackButton>
-          <i className="material-icons">keyboard_backspace</i>
-          Job run history
-        </BackButton>
-      </Link>
+      <Container row spaced>
+        <Link
+          to={
+            deploymentTarget.is_preview
+              ? `/preview-environments/apps/${latestProto.name}/job-history?service=${jobRun.service_name}&target=${deploymentTarget.id}`
+              : `/apps/${latestProto.name}/job-history?service=${jobRun.service_name}`
+          }
+        >
+          <BackButton>
+            <i className="material-icons">keyboard_backspace</i>
+            Job run history
+          </BackButton>
+        </Link>
+        {jobRun.status === "RUNNING" && (
+          <Button
+            color="red"
+            onClick={() => {
+              void cancelRun();
+            }}
+            disabled={jobRunCancelling}
+            status={
+              jobRunCancelling ? (
+                "loading"
+              ) : jobRunCancelError ? (
+                <Error message={jobRunCancelError} />
+              ) : (
+                ""
+              )
+            }
+          >
+            <Icon src={cancel} height={"15px"} />
+            <Spacer inline x={0.5} />
+            Cancel Run
+          </Button>
+        )}
+      </Container>
       <Spacer y={0.5} />
       <AppearingView>{renderHeaderText()}</AppearingView>
       <Spacer y={0.5} />

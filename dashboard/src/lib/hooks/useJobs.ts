@@ -10,7 +10,7 @@ import { useRevisionList } from "./useRevisionList";
 const jobRunValidator = z.object({
   id: z.string(),
   name: z.string(),
-  status: z.enum(["RUNNING", "SUCCESSFUL", "FAILED"]),
+  status: z.enum(["RUNNING", "SUCCESSFUL", "FAILED", "CANCELED"]),
   created_at: z.string(),
   finished_at: z.string(),
   app_revision_id: z.string(),
@@ -47,13 +47,7 @@ export const useJobs = ({
   });
 
   const { data, isLoading: isLoadingJobRuns } = useQuery(
-    [
-      "jobRuns",
-      appName,
-      deploymentTargetId,
-      revisionIdToNumber,
-      selectedJobName,
-    ],
+    ["jobRuns", appName, deploymentTargetId, selectedJobName],
     async () => {
       const res = await api.appJobs(
         "<token>",

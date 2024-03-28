@@ -16,6 +16,7 @@ import { relativeDate } from "shared/string_utils";
 import history from "assets/history.png";
 
 import { useLatestRevision } from "../../app-view/LatestRevisionContext";
+import { getStatusColor } from "../../app-view/tabs/activity-feed/events/utils";
 import JobRunDetails from "./JobRunDetails";
 import TriggerJobButton from "./TriggerJobButton";
 import { ranFor } from "./utils";
@@ -124,6 +125,9 @@ const JobsSection: React.FC<Props> = ({
               <Status color="#38a88a">Succeeded</Status>
             ))
             .with("FAILED", () => <Status color="#cc3d42">Failed</Status>)
+            .with("CANCELED", () => (
+              <Status color={getStatusColor(row.status)}>Canceled</Status>
+            ))
             .otherwise(() => <Status color="#ffffff11">Running</Status>);
         },
       },

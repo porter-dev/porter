@@ -336,6 +336,20 @@ const appJobs = baseApi<
     `/api/projects/${project_id}/clusters/${cluster_id}/apps/${porter_app_name}/jobs`
 );
 
+const cancelJob = baseApi<
+  {
+    deployment_target_id: string;
+  },
+  {
+    project_id: number;
+    cluster_id: number;
+    porter_app_name: string;
+    job_run_name: string;
+  }
+>("POST", ({ project_id, cluster_id, porter_app_name, job_run_name }) => {
+  return `/api/projects/${project_id}/clusters/${cluster_id}/apps/${porter_app_name}/jobs/${job_run_name}/cancel`;
+});
+
 const appServiceStatus = baseApi<
   {
     deployment_target_id: string;
@@ -3590,6 +3604,7 @@ export default {
   getLogsWithinTimeRange,
   appLogs,
   appJobs,
+  cancelJob,
   appEvents,
   appServiceStatus,
   getFeedEvents,

@@ -36,6 +36,8 @@ const (
 	JobRunStatus_Successful JobRunStatus = "SUCCESSFUL"
 	// JobRunStatus_Failed represents a job run that has failed
 	JobRunStatus_Failed JobRunStatus = "FAILED"
+	// JobRunStatus_Canceled represents a job run that has been cancelled
+	JobRunStatus_Canceled JobRunStatus = "CANCELED"
 )
 
 // JobRunFromProto converts a job run proto to a JobRun
@@ -78,6 +80,8 @@ func jobStatusFromProto(ctx context.Context, status porterv1.EnumJobRunStatus) (
 		return JobRunStatus_Successful, nil
 	case porterv1.EnumJobRunStatus_ENUM_JOB_RUN_STATUS_FAILED:
 		return JobRunStatus_Failed, nil
+	case porterv1.EnumJobRunStatus_ENUM_JOB_RUN_STATUS_CANCELED:
+		return JobRunStatus_Canceled, nil
 	default:
 		return "", telemetry.Error(ctx, span, nil, "invalid job status")
 	}

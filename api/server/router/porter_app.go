@@ -1328,6 +1328,35 @@ func getPorterAppRoutes(
 		Router:   r,
 	})
 
+	// POST /api/projects/{project_id}/clusters/{cluster_id}/apps/{porter_app_name}/jobs/{job_run_name}/cancel -> porter_app.CancelJobRunHandler
+	appJobCancelEndpoint := factory.NewAPIEndpoint(
+		&types.APIRequestMetadata{
+			Verb:   types.APIVerbUpdate,
+			Method: types.HTTPVerbPost,
+			Path: &types.Path{
+				Parent:       basePath,
+				RelativePath: fmt.Sprintf("%s/{%s}/jobs/{%s}/cancel", relPathV2, types.URLParamPorterAppName, types.URLParamJobRunName),
+			},
+			Scopes: []types.PermissionScope{
+				types.UserScope,
+				types.ProjectScope,
+				types.ClusterScope,
+			},
+		},
+	)
+
+	appJobCancelHandler := porter_app.NewCancelJobRunHandler(
+		config,
+		factory.GetDecoderValidator(),
+		factory.GetResultWriter(),
+	)
+
+	routes = append(routes, &router.Route{
+		Endpoint: appJobCancelEndpoint,
+		Handler:  appJobCancelHandler,
+		Router:   r,
+	})
+
 	// GET /api/projects/{project_id}/clusters/{cluster_id}/apps/{porter_app_name}/revisions/{app_revision_id} -> porter_app.NewGetAppRevisionHandler
 	getAppRevisionEndpoint := factory.NewAPIEndpoint(
 		&types.APIRequestMetadata{
