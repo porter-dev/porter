@@ -1,0 +1,88 @@
+on:
+  push:
+    tags:
+      - dev
+name: Release dev cli
+jobs:
+  build-linux:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          cache: false
+          go-version: "1.20.5"
+          go-version-file: go.mod
+      - name: Build Linux binaries
+        run: |
+          go build -ldflags="-w -s -X 'github.com/porter-dev/porter/cli/cmd/config.Version=dev_${{ github.sha }}' -X 'github.com/porter-dev/porter/cli/cmd/errors.SentryDSN=${{secrets.SENTRY_DSN}}'" -a -tags cli -o ./porter ./cli &
+          wait
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+      - name: Zip Linux binaries
+        run: |
+          mkdir -p ./release/linux
+          zip --junk-paths ./release/linux/porter_dev_${{ github.sha }}_Linux_x86_64.zip ./porter
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
+        with:
+          path: ./release/linux
+          name: linux-binaries
+          retention-days: 1
+  release:
+    name: Zip binaries, create release and upload assets
+    runs-on: ubuntu-latest
+    needs:
+      - build-linux
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v3
+        with:
+          name: linux-binaries
+          path: release/linux
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: dev_${{ github.sha }}
+          name: Release dev cli for ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: true
+      - name: Upload Linux CLI Release Asset
+        id: upload-linux-cli-release-asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TAG: dev_${{ github.sha }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./release/linux/porter_dev_${{ github.sha }}_Linux_x86_64.zip
+          asset_name: porter_dev_${{ github.sha }}_Linux_x86_64.zip
+          asset_content_type: application/zip
+  build-push-docker-cli:
+    name: Build a new porter-cli docker image and push to dev tag
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Login to GHCR
+        id: login-ghcr
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build
+        run: |
+          docker build ./services/porter_cli_container \
+            -t ghcr.io/porter-dev/porter/porter-cli:dev \
+            -f ./services/porter_cli_container/Dockerfile \
+            --build-arg VERSION=dev \
+            --build-arg SENTRY_DSN=${{secrets.SENTRY_DSN}}
+      - name: Push to GHCR
+        run: |
+          docker tag ghcr.io/porter-dev/porter/porter-cli:dev ghcr.io/porter-dev/porter/porter-cli:dev
+          docker push ghcr.io/porter-dev/porter/porter-cli:dev

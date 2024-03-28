@@ -1,0 +1,58 @@
+on:
+  workflow_run:
+    workflows: ["Deploy Porter to Internal Tooling"]
+    branches: [master]
+    types:
+      - completed
+name: Run integration tests
+jobs:
+  build-linux:
+    name: Build Linux binaries
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          cache: false
+          go-version: "1.20.5"
+          go-version-file: go.mod
+      - name: Build Linux binaries
+        run: |
+          go build -ldflags="-w -s -X 'github.com/porter-dev/porter/cli/cmd/config.Version=dev_${{ github.sha }}' -X 'github.com/porter-dev/porter/cli/cmd/errors.SentryDSN=${{secrets.SENTRY_DSN}}'" -a -tags cli -o ./porter ./cli &
+          wait
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+      - name: Zip Linux binaries
+        run: |
+          mkdir -p ./release/linux
+          zip --junk-paths ./release/linux/porter_dev_${{ github.sha }}_Linux_x86_64.zip ./porter
+      - name: Upload binaries
+        uses: actions/upload-artifact@v3
+        with:
+          name: go-binaries-cli
+          path: bin/
+          retention-days: 1
+  run-integration-tests:
+    name: run integration tests to test new build
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - name: Get built CLI
+        uses: actions/download-artifact@v3
+        with:
+          name: go-binaries-cli
+          path: bin/
+      - name: Porter app run
+        run: bin/porter app run app-integration-tests --job trigger
+        env:
+          PORTER_CLUSTER: "142"
+          PORTER_HOST: https://dashboard.internal-tools.porter.run
+          PORTER_PROJECT: "301"
+          PORTER_TOKEN: ${{ secrets.APP_INTEGRATION_PROJECT_TOKEN }}
+          PORTER_SERVICE: porter
+          PORTER_COMMIT: ${{ github.sha }}
